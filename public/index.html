@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WhatsApp Lists</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">✉</span>
+      <span>WhatsApp Lists</span>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="lists" aria-selected="true">Lists</button>
+      <button role="tab" data-tab="messages">Messages</button>
+      <button role="tab" data-tab="inbox">Inbox</button>
+      <button role="tab" data-tab="simulator" hidden>Simulator</button>
+    </nav>
+    <span id="mode-badge" class="badge"></span>
+  </header>
+
+  <main>
+    <!-- ─── Lists ─────────────────────────────────────────── -->
+    <section id="tab-lists" class="tab-panel">
+      <div class="grid">
+        <div class="card">
+          <h2>New list</h2>
+          <form id="list-form" class="form">
+            <label>Name
+              <input name="name" required maxlength="100" placeholder="Weekly Newsletter">
+            </label>
+            <label>Keyword
+              <input name="slug" required maxlength="40" pattern="[a-z0-9]+(-[a-z0-9]+)*" placeholder="newsletter">
+              <small>People join by sending <code>JOIN keyword</code>. Lowercase letters, numbers and hyphens.</small>
+            </label>
+            <label><span>Description <span class="muted">(optional)</span></span>
+              <input name="description" maxlength="500">
+            </label>
+            <label><span>Welcome message <span class="muted">(optional)</span></span>
+              <textarea name="welcomeMessage" rows="3" maxlength="1000" placeholder="Thanks for joining! You'll get our updates every Monday."></textarea>
+            </label>
+            <button type="submit" class="primary">Create list</button>
+          </form>
+        </div>
+
+        <div class="card wide">
+          <h2>Your lists</h2>
+          <div id="lists-table"></div>
+        </div>
+      </div>
+
+      <div id="list-detail" class="card" hidden></div>
+    </section>
+
+    <!-- ─── Messages ─────────────────────────────────────── -->
+    <section id="tab-messages" class="tab-panel" hidden>
+      <div class="grid">
+        <div class="card">
+          <h2>New message</h2>
+          <form id="message-form" class="form">
+            <label>Send to
+              <select name="listId" required></select>
+            </label>
+
+            <fieldset class="segmented">
+              <legend>Type</legend>
+              <label><input type="radio" name="kind" value="template" checked> Template</label>
+              <label><input type="radio" name="kind" value="text"> Free text</label>
+            </fieldset>
+
+            <div data-kind="template">
+              <p class="hint">Templates can reach everyone on the list at any time. Create and get them approved in
+                <a href="https://business.facebook.com/wa/manage/message-templates/" target="_blank" rel="noopener">WhatsApp Manager</a> first.</p>
+              <label>Template name
+                <input name="templateName" placeholder="weekly_update" pattern="[a-z0-9_]+">
+              </label>
+              <label>Language code
+                <input name="templateLanguage" value="en_US" placeholder="en_US">
+              </label>
+              <label><span>Parameters <span class="muted">— one per line, fills {{1}}, {{2}}, …</span></span>
+                <textarea name="templateParams" rows="4" placeholder="{{name}}&#10;Our Monday update&#10;Join us at 6pm on Friday for the community dinner."></textarea>
+                <small>Use <code>{{name}}</code> to insert each person's WhatsApp name. Parameters can't contain line breaks.</small>
+              </label>
+            </div>
+
+            <div data-kind="text" hidden>
+              <p class="hint warn">Free text only reaches people who messaged you in the last 24 hours — everyone else is skipped. Use a template for regular broadcasts.</p>
+              <label>Message
+                <textarea name="body" rows="6" maxlength="4096" placeholder="Hi {{name}}, …"></textarea>
+              </label>
+            </div>
+
+            <fieldset class="segmented">
+              <legend>When</legend>
+              <label><input type="radio" name="when" value="now" checked> Send now</label>
+              <label><input type="radio" name="when" value="later"> Schedule</label>
+            </fieldset>
+            <label data-when="later" hidden><span>Send at <span class="muted" id="tz-label"></span></span>
+              <input type="datetime-local" name="sendAt">
+            </label>
+
+            <button type="submit" class="primary">Queue message</button>
+          </form>
+        </div>
+
+        <div class="card wide">
+          <div class="card-head">
+            <h2>Messages</h2>
+            <button id="refresh-messages" class="ghost">Refresh</button>
+          </div>
+          <div id="messages-table"></div>
+        </div>
+      </div>
+
+      <div id="message-detail" class="card" hidden></div>
+    </section>
+
+    <!-- ─── Inbox ────────────────────────────────────────── -->
+    <section id="tab-inbox" class="tab-panel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>Inbox</h2>
+          <button id="refresh-inbox" class="ghost">Refresh</button>
+        </div>
+        <p class="hint">Everything people have sent to your WhatsApp number, including JOIN and STOP commands.</p>
+        <div id="inbox-table"></div>
+      </div>
+    </section>
+
+    <!-- ─── Simulator ────────────────────────────────────── -->
+    <section id="tab-simulator" class="tab-panel" hidden>
+      <div class="grid">
+        <div class="card">
+          <h2>Pretend to be a subscriber</h2>
+          <p class="hint">Mock mode: nothing is sent to WhatsApp. Send a message "from" any number to try joining, leaving and receiving broadcasts.</p>
+          <form id="sim-form" class="form">
+            <label>Phone number
+              <input name="from" required value="2348000000001" inputmode="numeric">
+            </label>
+            <label>WhatsApp name
+              <input name="name" value="Ada">
+            </label>
+            <label>Message
+              <input name="text" required placeholder="JOIN newsletter">
+            </label>
+            <div class="chips" id="sim-chips"></div>
+            <button type="submit" class="primary">Send to business</button>
+          </form>
+        </div>
+        <div class="card wide">
+          <div class="card-head">
+            <h2>Outgoing messages</h2>
+            <button id="refresh-outbox" class="ghost">Refresh</button>
+          </div>
+          <div id="outbox"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
