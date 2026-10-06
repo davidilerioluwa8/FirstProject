@@ -691,9 +691,8 @@ function meter(n, d) {
 }
 
 function renderStats({ totals: t, daily, campaigns, autoReplies: autos }) {
-  const net = t.joined - t.left;
   $('#stats-kpis').innerHTML = [
-    kpi('Subscribers', t.activeSubscribers.toLocaleString(), `${net >= 0 ? '+' : '−'}${Math.abs(net)} this period (${t.joined} joined, ${t.left} left)`),
+    kpi('Subscribers', t.activeSubscribers.toLocaleString(), `People on at least one list. This period: ${plural(t.joined, 'list join')}, ${plural(t.left, 'leave')}`),
     kpi('Campaigns sent', t.campaigns.toLocaleString(), `${plural(t.sent, 'message')} sent`),
     kpi('Delivered', pct(t.delivered, t.sent), `${t.delivered.toLocaleString()} of ${t.sent.toLocaleString()} reached a phone`),
     kpi('Opened', pct(t.read, t.delivered), `${t.read.toLocaleString()} of ${t.delivered.toLocaleString()} delivered were read`),
