@@ -1,6 +1,6 @@
 # WhatsApp Lists
 
-Email-style mailing lists for WhatsApp. Create as many lists as you like, share a link or QR code, and anyone can join — **without you saving their number** — then send or schedule broadcasts to each list.
+Email-style campaigns for WhatsApp. Create as many lists as you like, share a link or QR code, and anyone can join **without you saving their number**. Then send or schedule campaigns (with attachments), set up keyword auto-replies, let people ask to talk to you, and track delivery, open and reply rates.
 
 Built on the **official WhatsApp Business Cloud API** (no unofficial libraries, no risk of your number being banned for automation).
 
@@ -23,10 +23,13 @@ Built on the **official WhatsApp Business Cloud API** (no unofficial libraries, 
   | `STOP` / `UNSUBSCRIBE` / a template's "Stop promotions" button | leaves every list |
   | `LISTS` | shows which lists they're on |
   | `HELP` | shows the commands |
-- **Scheduled messages** — send now or pick a date/time; survives restarts and resumes half-sent broadcasts without double-sending
-- **Personalisation** — `{{name}}` is replaced with each person's WhatsApp name
-- **Delivery tracking** — sent / delivered / read / failed per recipient, from WhatsApp's status webhooks
-- **Inbox** — see everything people send to your number
+- **Add contacts yourself** — paste or upload a CSV of people who already agreed to hear from you (e.g. existing customers). Local numbers like `0803…` use the default country code from Settings. People who left with STOP are never re-added.
+- **Campaigns** — send now or schedule; survives restarts and resumes half-sent campaigns without double-sending. `{{name}}` is replaced with each person's name.
+- **Attachments** — PDFs, Word/Excel/PowerPoint, images and videos on campaigns and auto-replies. Files are uploaded to WhatsApp once and reused.
+- **Keyword auto-replies** — e.g. someone sends `ACCOUNT` and instantly gets your bank details and a PDF. Matching ignores capitals and punctuation, and works on the first words too (`Account please`).
+- **"Talk to me" requests** — a keyword like `CALL ME` sends you an alert on your personal WhatsApp with the person's name, number, message and a link to chat or call them. Requests are listed in the Inbox until you mark them done.
+- **Stats** — subscribers, joins and leaves per day, and per-campaign delivery, open (read) and reply rates, plus how often each auto-reply is used.
+- **Inbox** — everything people send to your number and how it was handled
 - **Mock mode + Simulator** — try the whole flow locally before you have a Meta account
 
 ## Quick start (mock mode — no Meta account needed)
@@ -43,7 +46,9 @@ Open http://localhost:3000 (login `admin` / the `ADMIN_PASSWORD` in `.env`), the
 
 1. **Lists** → create a list, e.g. keyword `newsletter`.
 2. **Simulator** → send `JOIN newsletter` from a couple of made-up numbers. You'll see the welcome replies.
-3. **Messages** → send a template message now, or schedule one. Watch it appear in the Simulator's outgoing messages.
+3. **Campaigns** → send a template message now, or schedule one. Watch it appear in the Simulator's outgoing messages.
+4. **Auto-replies** → add `ACCOUNT` with your bank details (and a PDF), and `CALL ME` set to *Connect them to me*. Try both from the Simulator.
+5. **Stats** → mock mode fakes delivery and read receipts a few seconds after sending, so you can see the numbers move.
 
 Other commands: `npm test`, `npm run typecheck`, `npm run build && npm start` (production).
 
@@ -115,7 +120,17 @@ Tips:
 - Add a quick-reply button "Stop promotions" — taps are handled as an unsubscribe from all lists.
 - Template approval usually takes minutes to a day.
 
-### 5. Use your real number and add billing
+### 5. Templates with attachments and the call-back alert
+
+- **Campaign attachments on templates:** the file goes in the template's header, so create the template with a **Document**, **Image** or **Video** header (WhatsApp Manager asks for a sample file). Free-text campaigns and auto-replies can attach any file without a template.
+- **Call-back alerts to your own number:** WhatsApp only lets the business number send you free text if *you* messaged it in the last 24 hours. To get alerts at any time, create a **Utility** template, e.g. `callback_request`:
+
+  > 📞 {{1}} ({{2}}) asked to speak with you. They said: {{3}}
+
+  and enter its name in **Settings → Call-back alerts**. {{1}} is their name, {{2}} their number, {{3}} what they sent.
+- **Tap instead of type:** add **quick-reply buttons** to a template whose text is your keyword (e.g. `ACCOUNT`, `CALL ME`). A tap is handled exactly like typing the word.
+
+### 6. Use your real number and add billing
 
 - **Add your own phone number** in WhatsApp Manager. It **can't be registered in the regular WhatsApp or WhatsApp Business app** at the same time — use a new number, or delete the WhatsApp account on it first.
 - **Add a payment method** in WhatsApp Manager. Meta charges **per template message delivered**; the price depends on the category (marketing costs the most, utility less) and the recipient's country. Replies within 24 hours of a user's message are free. See [Meta's pricing page](https://developers.facebook.com/docs/whatsapp/pricing).
@@ -123,7 +138,8 @@ Tips:
 
 ## Rules worth knowing
 
-- **Opt-in only.** People are added only when *they* message you. There is deliberately no "import numbers" feature — messaging people who didn't opt in gets your number's quality rating lowered and eventually restricted.
+- **Opt-in only.** WhatsApp requires that people agreed to hear from you. Joining with a keyword covers that. When you add contacts yourself, you must already have their permission (for example, customers who gave you their number for updates); the dashboard asks you to confirm this. Messaging people who didn't opt in gets your number's quality rating lowered and eventually restricted.
+- **Contacts you added** have never messaged you, so they can only receive **templates** until they write to you.
 - **Free-text messages** only reach people who messaged you in the last 24 hours; everyone else is marked *skipped*. Use templates for broadcasts.
 - **Make leaving easy.** Every welcome message says how to leave; keep a "Reply STOP to unsubscribe" line in your templates.
 - High block/report rates lower your quality rating. Send things people signed up for.
@@ -138,7 +154,10 @@ src/
   db.ts              SQLite schema (node:sqlite)
   store.ts           all database queries
   commands.ts        parses JOIN / STOP / LISTS / HELP; builds wa.me join links
-  inbound.ts         handles incoming messages and delivery status webhooks
+  inbound.ts         handles incoming messages (commands, keyword auto-replies) and status webhooks
+  handoff.ts         "talk to me" requests and the alert to your personal number
+  media.ts           attachment storage, WhatsApp upload caching, text + attachment sending
+  phone.ts           phone number normalisation for contacts you add yourself
   webhook.ts         webhook verification + X-Hub-Signature-256 check
   scheduler.ts       sends due messages with rate limiting, resume-after-restart, 24h-window check
   api.ts             JSON API for the dashboard (+ simulator endpoints in mock mode)
@@ -151,7 +170,7 @@ test/                node:test suites
 ## Ideas for next steps
 
 - Pull approved templates from the API (`GET /<WABA_ID>/message_templates`) into a dropdown with a preview
-- Header images/documents in templates, and media in free-text messages
 - Recurring schedules (e.g. every Monday 9am)
 - Replying to people from the Inbox
+- Multi-step flows (keyword → question → answer), e.g. collecting an order
 - Multiple admin users; Postgres for multi-instance deployments

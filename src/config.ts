@@ -1,8 +1,12 @@
+import { dirname, join } from 'node:path';
+
 export type WhatsAppMode = 'mock' | 'cloud';
 
 export interface Config {
   port: number;
   databasePath: string;
+  /** Where uploaded attachments are stored. */
+  mediaDir: string;
   mode: WhatsAppMode;
   /** Business phone number, digits only, used to build wa.me join links. */
   businessPhone: string;
@@ -34,6 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const config: Config = {
     port: int(env.PORT, 3000, 'PORT'),
     databasePath: env.DATABASE_PATH || './data/app.db',
+    mediaDir: env.MEDIA_DIR || join(dirname(env.DATABASE_PATH || './data/app.db'), 'uploads'),
     mode,
     businessPhone: (env.WHATSAPP_BUSINESS_PHONE ?? '').replace(/\D/g, ''),
     admin: {

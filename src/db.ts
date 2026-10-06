@@ -67,6 +67,57 @@ CREATE TABLE IF NOT EXISTS inbound_messages (
 );
 `;
 
+/** Applied in order; PRAGMA user_version records how many have run. */
+const MIGRATIONS = [
+  // 1: attachments, keyword auto-replies, call-back requests, settings, manually added contacts
+  `
+  CREATE TABLE media (
+    id             INTEGER PRIMARY KEY,
+    filename       TEXT    NOT NULL,
+    mime_type      TEXT    NOT NULL,
+    size           INTEGER NOT NULL,
+    kind           TEXT    NOT NULL CHECK (kind IN ('image', 'video', 'document')),
+    storage_path   TEXT    NOT NULL,
+    wa_media_id    TEXT,
+    wa_uploaded_at INTEGER,
+    created_at     INTEGER NOT NULL
+  );
+
+  CREATE TABLE auto_replies (
+    id          INTEGER PRIMARY KEY,
+    keyword     TEXT    NOT NULL UNIQUE,
+    action      TEXT    NOT NULL CHECK (action IN ('reply', 'handoff')),
+    reply_text  TEXT    NOT NULL DEFAULT '',
+    media_id    INTEGER REFERENCES media(id),
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    hit_count   INTEGER NOT NULL DEFAULT 0,
+    last_hit_at INTEGER,
+    created_at  INTEGER NOT NULL
+  );
+
+  CREATE TABLE handoffs (
+    id            INTEGER PRIMARY KEY,
+    subscriber_id INTEGER NOT NULL REFERENCES subscribers(id) ON DELETE CASCADE,
+    message       TEXT    NOT NULL DEFAULT '',
+    status        TEXT    NOT NULL CHECK (status IN ('open', 'done')),
+    notify_status TEXT    NOT NULL CHECK (notify_status IN ('sent', 'failed', 'not_configured')),
+    notify_error  TEXT,
+    created_at    INTEGER NOT NULL,
+    resolved_at   INTEGER
+  );
+
+  CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  ALTER TABLE memberships ADD COLUMN source TEXT NOT NULL DEFAULT 'whatsapp';
+  ALTER TABLE messages ADD COLUMN media_id INTEGER REFERENCES media(id);
+  ALTER TABLE inbound_messages ADD COLUMN handled_as TEXT NOT NULL DEFAULT '';
+  CREATE INDEX inbound_by_sender ON inbound_messages(wa_id, received_at);
+  `,
+];
+
 export type Database = DatabaseSync;
 
 export function openDatabase(path: string): Database {
@@ -75,7 +126,18 @@ export function openDatabase(path: string): Database {
   if (path !== ':memory:') db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+function migrate(db: Database): void {
+  const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number };
+  for (let i = version; i < MIGRATIONS.length; i++) {
+    transaction(db, () => {
+      db.exec(MIGRATIONS[i]);
+      db.exec(`PRAGMA user_version = ${i + 1}`);
+    });
+  }
 }
 
 export function transaction<T>(db: Database, fn: () => T): T {

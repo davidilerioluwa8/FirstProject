@@ -12,6 +12,9 @@ const LEAVE_WORDS = new Set(['STOP', 'LEAVE', 'UNSUBSCRIBE', 'QUIT', 'CANCEL', '
 const LIST_WORDS = new Set(['LISTS', 'MYLISTS', 'STATUS']);
 const HELP_WORDS = new Set(['HELP', 'INFO', 'MENU', '?']);
 
+/** Words the built-in commands use, so auto-reply keywords can't clash with them. */
+export const RESERVED_WORDS = new Set([...JOIN_WORDS, ...LEAVE_WORDS, ...LIST_WORDS, ...HELP_WORDS, 'MY']);
+
 /** List keywords: lowercase letters, digits and hyphens, e.g. "prayer-group". */
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

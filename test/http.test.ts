@@ -20,7 +20,7 @@ before(async () => {
     WHATSAPP_VERIFY_TOKEN: 'verify-me',
     WHATSAPP_APP_SECRET: APP_SECRET,
   });
-  const server = createApp({ config, store: ctx.store, client: ctx.client, now: ctx.now }).listen(0);
+  const server = createApp({ config, store: ctx.store, client: ctx.client, media: ctx.media, now: ctx.now }).listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   close = () => server.close();
@@ -132,4 +132,39 @@ test('cloud client sends the Graph API template payload and surfaces errors', as
   });
 
   await assert.rejects(client.sendText('2348000000001', 'hi'), /Template not found/);
+});
+
+test('file upload, auto-reply and contact import endpoints', async () => {
+  const upload = await fetch(`${base}/api/media?filename=${encodeURIComponent('Price list.pdf')}`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/pdf' },
+    body: '%PDF-1.4',
+  });
+  assert.equal(upload.status, 201);
+  const file = await upload.json();
+  assert.equal(file.kind, 'document');
+  assert.equal(file.storagePath, undefined, 'server paths are not exposed');
+
+  const download = await fetch(`${base}/api/media/${file.id}/file`, { headers: auth });
+  assert.equal(await download.text(), '%PDF-1.4');
+
+  const reserved = await json('/api/auto-replies', { keyword: 'stop', action: 'reply', replyText: 'x' });
+  assert.equal(reserved.status, 400);
+  const created = await json('/api/auto-replies', { keyword: 'price list', action: 'reply', replyText: 'Here you go', mediaId: file.id });
+  assert.equal(created.status, 201);
+  assert.equal((await created.json()).keyword, 'PRICE LIST');
+  assert.equal((await json(`/api/media/${file.id}`, undefined, 'DELETE')).status, 409, 'in use');
+
+  const [list] = ctx.store.listLists();
+  const noConsent = await json(`/api/lists/${list.id}/members`, { contacts: [{ phone: '+2348000000777' }] });
+  assert.equal(noConsent.status, 400);
+  await json('/api/settings', { defaultCountryCode: '234' }, 'PUT');
+  const imported = await json(`/api/lists/${list.id}/members`, {
+    consent: true,
+    contacts: [{ phone: '0803 000 0777', name: 'Bisi' }, { phone: '+2348000000778' }, { phone: '12' }],
+  });
+  assert.deepEqual(await imported.json(), { added: 2, alreadyMember: 0, optedOut: [], invalid: ['12'] });
+
+  const stats = await (await json('/api/stats?days=30&tzOffset=-60')).json();
+  assert.equal(stats.daily.length, 30);
 });

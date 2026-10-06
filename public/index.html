@@ -14,8 +14,11 @@
     </div>
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="lists" aria-selected="true">Lists</button>
-      <button role="tab" data-tab="messages">Messages</button>
-      <button role="tab" data-tab="inbox">Inbox</button>
+      <button role="tab" data-tab="messages">Campaigns</button>
+      <button role="tab" data-tab="auto">Auto-replies</button>
+      <button role="tab" data-tab="inbox">Inbox <span class="count" id="handoff-count" hidden></span></button>
+      <button role="tab" data-tab="stats">Stats</button>
+      <button role="tab" data-tab="settings">Settings</button>
       <button role="tab" data-tab="simulator" hidden>Simulator</button>
     </nav>
     <span id="mode-badge" class="badge"></span>
@@ -54,11 +57,11 @@
       <div id="list-detail" class="card" hidden></div>
     </section>
 
-    <!-- ─── Messages ─────────────────────────────────────── -->
+    <!-- ─── Campaigns ────────────────────────────────────── -->
     <section id="tab-messages" class="tab-panel" hidden>
       <div class="grid">
         <div class="card">
-          <h2>New message</h2>
+          <h2>New campaign</h2>
           <form id="message-form" class="form">
             <label>Send to
               <select name="listId" required></select>
@@ -80,16 +83,27 @@
                 <input name="templateLanguage" value="en_US" placeholder="en_US">
               </label>
               <label><span>Parameters <span class="muted">— one per line, fills {{1}}, {{2}}, …</span></span>
-                <textarea name="templateParams" rows="4" placeholder="{{name}}&#10;Our Monday update&#10;Join us at 6pm on Friday for the community dinner."></textarea>
+                <textarea name="templateParams" rows="4" placeholder="{{name}}&#10;Our Monday update&#10;Reply ACCOUNT for our bank details."></textarea>
                 <small>Use <code>{{name}}</code> to insert each person's WhatsApp name. Parameters can't contain line breaks.</small>
               </label>
             </div>
 
             <div data-kind="text" hidden>
-              <p class="hint warn">Free text only reaches people who messaged you in the last 24 hours — everyone else is skipped. Use a template for regular broadcasts.</p>
+              <p class="hint warn">Free text only reaches people who messaged you in the last 24 hours. Everyone else is skipped, so use a template for regular campaigns.</p>
               <label>Message
                 <textarea name="body" rows="6" maxlength="4096" placeholder="Hi {{name}}, …"></textarea>
               </label>
+            </div>
+
+            <div class="attach" data-attach="message">
+              <label><span>Attachment <span class="muted">(optional)</span></span>
+                <select name="mediaId" data-media-select></select>
+              </label>
+              <label class="upload">
+                <input type="file" data-media-upload accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.mp4,.3gp">
+                <span>Upload a file</span>
+              </label>
+              <small data-kind="template">For templates, the file goes in the header, so the template needs a matching Image, Video or Document header.</small>
             </div>
 
             <fieldset class="segmented">
@@ -101,13 +115,13 @@
               <input type="datetime-local" name="sendAt">
             </label>
 
-            <button type="submit" class="primary">Queue message</button>
+            <button type="submit" class="primary">Queue campaign</button>
           </form>
         </div>
 
         <div class="card wide">
           <div class="card-head">
-            <h2>Messages</h2>
+            <h2>Campaigns</h2>
             <button id="refresh-messages" class="ghost">Refresh</button>
           </div>
           <div id="messages-table"></div>
@@ -117,15 +131,135 @@
       <div id="message-detail" class="card" hidden></div>
     </section>
 
+    <!-- ─── Auto-replies ─────────────────────────────────── -->
+    <section id="tab-auto" class="tab-panel" hidden>
+      <div class="grid">
+        <div class="card">
+          <h2 id="auto-form-title">New auto-reply</h2>
+          <form id="auto-form" class="form">
+            <input type="hidden" name="id">
+            <label>When someone sends
+              <input name="keyword" required maxlength="30" placeholder="ACCOUNT">
+              <small>Matches the whole message or its first words, ignoring capitals: <code>account</code> and <code>Account please</code> both work.</small>
+            </label>
+            <fieldset class="segmented">
+              <legend>Then</legend>
+              <label><input type="radio" name="action" value="reply" checked> Send a reply</label>
+              <label><input type="radio" name="action" value="handoff"> Connect them to me</label>
+            </fieldset>
+            <p class="hint" data-action="handoff" hidden>You get an alert on your personal WhatsApp with their name, number and a link to chat or call them. Set your number in <a href="#settings" data-goto="settings">Settings</a>.</p>
+            <label><span data-action="reply">Reply</span><span data-action="handoff" hidden>Reply to them <span class="muted">(optional)</span></span>
+              <textarea name="replyText" rows="5" maxlength="4096" placeholder="Our account details:&#10;Bank: GTBank&#10;Account name: …&#10;Account number: …"></textarea>
+            </label>
+            <div class="attach">
+              <label><span>Attachment <span class="muted">(optional)</span></span>
+                <select name="mediaId" data-media-select></select>
+              </label>
+              <label class="upload">
+                <input type="file" data-media-upload accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.mp4,.3gp">
+                <span>Upload a file</span>
+              </label>
+            </div>
+            <label class="check"><input type="checkbox" name="enabled" checked> Turned on</label>
+            <div class="row">
+              <button type="submit" class="primary">Save auto-reply</button>
+              <button type="button" class="ghost" id="auto-cancel" hidden>Cancel editing</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card wide">
+          <h2>Your auto-replies</h2>
+          <p class="hint">Mention the keyword in your campaigns, e.g. <em>“Reply ACCOUNT to get our bank details”</em>. You can also add a quick-reply button with the keyword to a template so people tap instead of typing. Replies are free because the person has just messaged you.</p>
+          <div id="auto-table"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ─── Inbox ────────────────────────────────────────── -->
     <section id="tab-inbox" class="tab-panel" hidden>
       <div class="card">
         <div class="card-head">
-          <h2>Inbox</h2>
+          <h2>Call-back requests</h2>
           <button id="refresh-inbox" class="ghost">Refresh</button>
         </div>
-        <p class="hint">Everything people have sent to your WhatsApp number, including JOIN and STOP commands.</p>
+        <div id="handoffs-table"></div>
+      </div>
+      <div class="card">
+        <h2>Inbox</h2>
+        <p class="hint">Everything people have sent to your WhatsApp number, and how it was handled.</p>
         <div id="inbox-table"></div>
+      </div>
+    </section>
+
+    <!-- ─── Stats ────────────────────────────────────────── -->
+    <section id="tab-stats" class="tab-panel" hidden>
+      <div class="card-head stats-head">
+        <h2>Stats</h2>
+        <label class="inline">Period
+          <select id="stats-days">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+        </label>
+      </div>
+      <div id="stats-kpis" class="kpis"></div>
+      <div class="card">
+        <h2>Joins and leaves</h2>
+        <div id="stats-chart"></div>
+      </div>
+      <div class="card">
+        <h2>Campaign performance</h2>
+        <p class="hint">Opened counts read receipts. People who turned read receipts off show as delivered only, so the real open rate is a little higher. Replied means they messaged you within 3 days of the campaign.</p>
+        <div id="stats-campaigns"></div>
+      </div>
+      <div class="card">
+        <h2>Auto-replies used</h2>
+        <div id="stats-auto"></div>
+      </div>
+    </section>
+
+    <!-- ─── Settings ─────────────────────────────────────── -->
+    <section id="tab-settings" class="tab-panel" hidden>
+      <div class="grid two">
+        <div class="card">
+          <h2>Call-back alerts</h2>
+          <form id="settings-form" class="form">
+            <label>Your name
+              <input name="ownerName" maxlength="60" placeholder="David">
+              <small>Used in the reply: “David will get back to you shortly.”</small>
+            </label>
+            <label>Your personal WhatsApp number
+              <input name="ownerPhone" maxlength="30" placeholder="+234 803 123 4567" inputmode="tel">
+              <small>Where “connect them to me” alerts go. Use a different number from the business one.</small>
+            </label>
+            <p class="hint">WhatsApp only lets the business number text you freely if <strong>you</strong> messaged it in the last 24 hours. To get alerts at any time, create a <em>Utility</em> template such as:<br>
+              <code>📞 {{1}} ({{2}}) asked to speak with you. They said: {{3}}</code><br>and enter its name below.</p>
+            <label><span>Alert template name <span class="muted">(recommended)</span></span>
+              <input name="notifyTemplateName" pattern="[a-z0-9_]*" placeholder="callback_request">
+            </label>
+            <label>Template language
+              <input name="notifyTemplateLanguage" placeholder="en_US">
+            </label>
+            <label>Default country code
+              <input name="defaultCountryCode" maxlength="4" inputmode="numeric" placeholder="234">
+              <small>Used when you add contacts with local numbers like 0803 123 4567.</small>
+            </label>
+            <button type="submit" class="primary">Save settings</button>
+          </form>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>Files</h2>
+            <label class="upload">
+              <input type="file" data-media-upload accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.mp4,.3gp">
+              <span>Upload a file</span>
+            </label>
+          </div>
+          <p class="hint">Documents (PDF, Word, Excel, PowerPoint, text) up to 100 MB, JPG/PNG images up to 5 MB, MP4 videos up to 16 MB.</p>
+          <div id="media-table"></div>
+        </div>
       </div>
     </section>
 
@@ -134,7 +268,7 @@
       <div class="grid">
         <div class="card">
           <h2>Pretend to be a subscriber</h2>
-          <p class="hint">Mock mode: nothing is sent to WhatsApp. Send a message "from" any number to try joining, leaving and receiving broadcasts.</p>
+          <p class="hint">Mock mode: nothing is sent to WhatsApp. Send a message "from" any number to try joining, leaving, keywords and receiving campaigns.</p>
           <form id="sim-form" class="form">
             <label>Phone number
               <input name="from" required value="2348000000001" inputmode="numeric">
@@ -159,6 +293,21 @@
       </div>
     </section>
   </main>
+
+  <dialog id="ask-dialog">
+    <form method="dialog">
+      <p id="ask-text"></p>
+      <div class="row end"><button value="no" class="ghost">Keep</button><button value="yes" class="primary" id="ask-yes">Confirm</button></div>
+    </form>
+  </dialog>
+  <dialog id="edit-dialog">
+    <form method="dialog" class="form">
+      <h2>Edit list</h2>
+      <label for="edit-name">Name<input id="edit-name" maxlength="100" required></label>
+      <label for="edit-welcome">Welcome message<textarea id="edit-welcome" rows="3" maxlength="1000"></textarea></label>
+      <div class="row end"><button value="no" class="ghost" formnovalidate>Cancel</button><button value="yes" class="primary">Save</button></div>
+    </form>
+  </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="app.js" type="module"></script>

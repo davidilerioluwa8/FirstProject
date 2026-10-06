@@ -18,6 +18,7 @@ function harness(opts: { ratePerSecond?: number; client?: WhatsAppClient } = {})
   const scheduler = new Scheduler({
     store: ctx.store,
     client: opts.client ?? ctx.client,
+    media: ctx.media,
     ratePerSecond: opts.ratePerSecond ?? 10,
     intervalMs: 1000,
     now: ctx.now,
@@ -94,6 +95,8 @@ test('API errors are recorded per recipient; all-failed messages are marked fail
     sendTemplate: async () => {
       throw new Error('(#132001) Template name does not exist in the translation');
     },
+    sendMedia: async () => ({ wamid: 'x' }),
+    uploadMedia: async () => 'x',
   };
   const h = harness({ client: failing });
   h.addMember('2348000000001', 'Ada');

@@ -1,4 +1,6 @@
 import { parseCommand } from './commands.js';
+import { requestHandoff } from './handoff.js';
+import { type MediaLibrary, sendRich } from './media.js';
 import type { DeliveryStatus, Store, Subscriber } from './store.js';
 import type { WhatsAppClient } from './whatsapp/client.js';
 
@@ -35,6 +37,7 @@ export interface InboundWhatsAppMessage {
 export interface InboundDeps {
   store: Store;
   client: WhatsAppClient;
+  media: MediaLibrary;
   now?: () => number;
   log?: (line: string) => void;
 }
@@ -94,20 +97,74 @@ export async function handleInboundMessage(
   if (!store.recordInbound({ wamid: msg.id, waId: msg.from, type: msg.type, text }, now)) return; // duplicate webhook
 
   const subscriber = store.touchSubscriber(msg.from, profileName, now);
-  const reply = replyFor(text, subscriber, store, now);
-  if (!reply) return;
+  let outcome: Outcome;
+  try {
+    outcome = await respond(text, subscriber, deps, now);
+  } catch (err) {
+    (deps.log ?? console.error)(`Failed to handle message from ${msg.from}: ${(err as Error).message}`);
+    return;
+  }
+  store.setInboundHandled(msg.id, outcome.handledAs);
+  if (!outcome.reply && !outcome.mediaId) return;
 
   try {
-    await deps.client.sendText(msg.from, reply);
+    const attachment = outcome.mediaId ? await deps.media.attachment(outcome.mediaId, now) : undefined;
+    await sendRich(deps.client, msg.from, outcome.reply ?? '', attachment);
   } catch (err) {
     (deps.log ?? console.error)(`Failed to reply to ${msg.from}: ${(err as Error).message}`);
   }
 }
 
-/** Applies the subscriber's command and returns the reply to send, or null to stay quiet. */
-function replyFor(text: string, subscriber: Subscriber, store: Store, now: number): string | null {
-  const command = parseCommand(text);
+interface Outcome {
+  /** Shown in the inbox, e.g. "join:news" or "keyword:ACCOUNT". */
+  handledAs: string;
+  reply: string | null;
+  mediaId?: number | null;
+}
 
+/** Built-in commands first, then your keyword auto-replies, then the help menu. */
+async function respond(text: string, subscriber: Subscriber, deps: InboundDeps, now: number): Promise<Outcome> {
+  const { store } = deps;
+  const command = parseCommand(text);
+  const builtIn = (reply: string | null) => ({ handledAs: command.type === 'unknown' ? '' : commandLabel(command), reply });
+
+  if (command.type === 'unknown') {
+    const auto = store.matchAutoReply(text);
+    if (auto) {
+      store.recordAutoReplyHit(auto.id, now);
+      if (auto.action === 'handoff') {
+        const { isNew } = await requestHandoff(subscriber, text, deps, now);
+        const owner = store.getSettings().ownerName.trim();
+        const reply = isNew
+          ? auto.replyText.trim() ||
+            `Thanks${subscriber.name ? `, ${subscriber.name}` : ''}! ${owner || 'Someone from our team'} will get back to you shortly.`
+          : `We already have your request and ${owner || 'someone'} will get back to you soon.`;
+        return { handledAs: 'talk-to-me', reply, mediaId: isNew ? auto.mediaId : null };
+      }
+      return { handledAs: `keyword:${auto.keyword}`, reply: auto.replyText, mediaId: auto.mediaId };
+    }
+  }
+
+  return builtIn(replyFor(command, subscriber, store, now));
+}
+
+function commandLabel(command: ReturnType<typeof parseCommand>): string {
+  switch (command.type) {
+    case 'join':
+      return `join:${command.slug}`;
+    case 'leave':
+      return `leave:${command.slug}`;
+    case 'leave_all':
+      return 'leave:all';
+    case 'my_lists':
+      return 'lists';
+    default:
+      return command.type;
+  }
+}
+
+/** Applies a built-in command and returns the reply to send, or null to stay quiet. */
+function replyFor(command: ReturnType<typeof parseCommand>, subscriber: Subscriber, store: Store, now: number): string | null {
   switch (command.type) {
     case 'join': {
       if (!command.slug) return 'Please send *JOIN* followed by the list name, for example: JOIN newsletter';

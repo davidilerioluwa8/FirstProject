@@ -1,5 +1,6 @@
+import { type MediaLibrary, sendRich } from './media.js';
 import type { Message, PendingDelivery, Store, Subscriber } from './store.js';
-import type { WhatsAppClient } from './whatsapp/client.js';
+import type { MediaAttachment, WhatsAppClient } from './whatsapp/client.js';
 
 /** WhatsApp only delivers free-form text within 24h of the user's last message. */
 export const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -7,6 +8,7 @@ export const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 export interface SchedulerOptions {
   store: Store;
   client: WhatsAppClient;
+  media: MediaLibrary;
   ratePerSecond: number;
   intervalMs: number;
   now?: () => number;
@@ -69,9 +71,20 @@ export class Scheduler {
     const pending = store.pendingDeliveries(message.id);
     if (pending.length > 0) this.log(`Sending message #${message.id} to ${pending.length} subscriber(s)`);
 
+    let attachment: MediaAttachment | undefined;
+    if (message.mediaId && pending.length > 0) {
+      try {
+        attachment = await this.options.media.attachment(message.mediaId, this.now());
+      } catch (err) {
+        const error = `Attachment could not be uploaded: ${(err as Error).message}`;
+        for (const p of pending) store.setDeliveryResult(p.deliveryId, { status: 'failed', error }, this.now());
+        pending.length = 0;
+      }
+    }
+
     for (let i = 0; i < pending.length; i += ratePerSecond) {
       const batchStarted = this.now();
-      await Promise.all(pending.slice(i, i + ratePerSecond).map((p) => this.deliver(message, p)));
+      await Promise.all(pending.slice(i, i + ratePerSecond).map((p) => this.deliver(message, p, attachment)));
       const elapsed = this.now() - batchStarted;
       if (i + ratePerSecond < pending.length && elapsed < 1000) await this.sleep(1000 - elapsed);
     }
@@ -84,7 +97,11 @@ export class Scheduler {
     );
   }
 
-  private async deliver(message: Message, { deliveryId, subscriber }: PendingDelivery): Promise<void> {
+  private async deliver(
+    message: Message,
+    { deliveryId, subscriber }: PendingDelivery,
+    attachment: MediaAttachment | undefined,
+  ): Promise<void> {
     const { store, client } = this.options;
     try {
       let wamid: string;
@@ -98,12 +115,13 @@ export class Scheduler {
           );
           return;
         }
-        ({ wamid } = await client.sendText(subscriber.waId, personalize(message.body ?? '', subscriber)));
+        ({ wamid } = await sendRich(client, subscriber.waId, personalize(message.body ?? '', subscriber), attachment));
       } else {
         ({ wamid } = await client.sendTemplate(subscriber.waId, {
           name: message.templateName ?? '',
           language: message.templateLanguage ?? 'en_US',
           bodyParams: message.templateParams.map((p) => personalize(p, subscriber)),
+          header: attachment,
         }));
       }
       store.setDeliveryResult(deliveryId, { status: 'accepted', wamid }, this.now());
